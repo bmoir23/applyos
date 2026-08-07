@@ -242,3 +242,64 @@ PY", "timestamp": "2026-08-06T22:56:52-04:00"}
 {"event": "before_shell", "command": "git status --short | head -80; echo '---'; git diff --stat HEAD | tail -40", "timestamp": "2026-08-06T23:33:24-04:00"}
 {"event": "before_shell", "command": "pnpm add -D @playwright/test@1.57.0 2>&1 | tail -30", "timestamp": "2026-08-06T23:34:03-04:00"}
 {"event": "before_shell", "command": "npx eslint . --max-warnings 0 2>&1 | rg -v 'npm warn' | tail -40; echo '===TSC==='; npx tsc --noEmit 2>&1 | rg -v 'npm warn' | tail -40; echo '===TEST==='; npx vitest run 2>&1 | tail -30", "timestamp": "2026-08-06T23:38:13-04:00"}
+{"event": "before_shell", "command": "# Recover env.local to disk WITHOUT printing secrets
+python3 <<'PY'
+import subprocess, pathlib, os
+
+repo = pathlib.Path('.')
+target = repo / 'env.local'
+if target.exists():
+    print('env.local already exists; skipping recovery')
+    raise SystemExit(0)
+
+# 1) dangling blobs from fsck --lost-found
+subprocess.run(['git', 'fsck', '--lost-found'], capture_output=True)
+lost = pathlib.Path('.git/lost-found/other')
+candidates = []
+if lost.exists():
+    for p in lost.iterdir():
+        try:
+            data = p.read_bytes()
+        except Exception:
+            continue
+        text = data.decode('utf-8', errors='ignore')
+        if 'DATABASE_URL' in text or 'CLERK_SECRET_KEY' in text or 'CLOUDFLARE' in text:
+            # Prefer files that look like env files (KEY=VALUE lines)
+            lines = [ln for ln in text.splitlines() if '=' in ln and not ln.startswith('#')]
+            if len(lines) >= 3:
+                candidates.append((len(lines), p, text))
+
+candidates.sort(reverse=True)
+if candidates:
+    _, p, text = candidates[0]
+    target.write_text(text)
+    os.chmod(target, 0o600)
+    print(f'Recovered env.local from dangling blob ({len(text)} bytes). Contents not printed.')
+    raise SystemExit(0)
+
+# 2) try unreachable commits that still have env.local
+proc = subprocess.run(
+    ['git', 'rev-list', '--objects', '--all', '--unreachable'],
+    capture_output=True, text=True,
+)
+# fallback: search pack for previous tip if still present
+for sha in ['c66f14fd9244e3c2f91ca09d2c7308ba60b9fc4e', '529f400538f6ea08cfaab7696e0d9855bc6a19a5']:
+    show = subprocess.run(['git', 'show', f'{sha}:env.local'], capture_output=True)
+    if show.returncode == 0 and show.stdout:
+        target.write_bytes(show.stdout)
+        os.chmod(target, 0o600)
+        print(f'Recovered env.local from commit {sha[:8]}. Contents not printed.')
+        raise SystemExit(0)
+
+print('FAILED: could not recover env.local automatically')
+raise SystemExit(1)
+PY
+test -f env.local && echo 'env.local on disk: yes' || echo 'env.local on disk: no'
+# Ensure it stays ignored / untracked
+git check-ignore -v env.local || true
+git status -sb | head -15", "timestamp": "2026-08-07T00:11:22-04:00"}
+{"event": "before_shell", "command": "# Push cleaned history (no env.local) over the placeholder remote main
+git push -u origin main --force-with-lease
+echo '---'
+git ls-remote origin HEAD refs/heads/main
+git status -sb | head -10", "timestamp": "2026-08-07T00:11:30-04:00"}
