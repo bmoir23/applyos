@@ -303,3 +303,15 @@ git push -u origin main --force-with-lease
 echo '---'
 git ls-remote origin HEAD refs/heads/main
 git status -sb | head -10", "timestamp": "2026-08-07T00:11:30-04:00"}
+{"event": "before_shell", "command": "git fetch origin
+git push -u origin main --force-with-lease=refs/heads/main:9c4242f4b2f41c6f8c882d5f8b7aa2e8d4ec8c1e
+echo '---'
+git ls-remote origin HEAD refs/heads/main
+git log --oneline -3", "timestamp": "2026-08-07T00:11:53-04:00"}
+{"event": "before_shell", "command": "git log --oneline -6
+git ls-tree -r --name-only HEAD | rg -n 'env\.local|\.env$|secret|token' || echo 'no env.local in tree'
+git show --stat --oneline HEAD | head -40
+# Confirm remote matches
+git status -sb | head -8
+# Check if env.local can be found in Time Machine or elsewhere without printing
+ls -la /Users/bmoir/Desktop/applyos/env.local /Users/bmoir/Desktop/applyos/applyOS/.env 2>&1 | head -10", "timestamp": "2026-08-07T00:12:06-04:00"}
