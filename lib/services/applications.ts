@@ -7,13 +7,17 @@ import {
   applications,
   coverLetters,
   resumeVersions,
+  users,
 } from "@/db/schema";
 import { db } from "@/lib/db";
 import { createAgentEvent } from "@/lib/services/agentEvents";
 import { getOwnedJob } from "@/lib/services/jobs";
+import { KANBAN_STAGE_LABELS, type KanbanStage } from "@/lib/kanban/stages";
+import { ensureHiredMembership } from "@/lib/services/tribes";
 import {
   applicationInputSchema,
   applicationUpdateSchema,
+  kanbanStageSchema,
   type ApplicationUpdate,
 } from "@/lib/validators";
 
@@ -212,5 +216,72 @@ export async function approveExternalSubmission(
     summary:
       "User approved an external submission step. ApplyOS did not submit anything.",
   });
+  return application;
+}
+
+/**
+ * Called when a user reaches the hired kanban stage or unlocks community access.
+ * Ensures default tribe membership and user-level hire timestamps.
+ */
+export async function onUserHired(userId: string) {
+  await db
+    .update(users)
+    .set({
+      hiredAt: new Date(),
+      communityUnlockedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, userId));
+
+  return ensureHiredMembership(userId);
+}
+
+export async function updateKanbanStage(
+  userId: string,
+  applicationId: string,
+  stage: KanbanStage,
+) {
+  const parsedStage = kanbanStageSchema.parse(stage);
+  const current = await getOwnedApplication(userId, applicationId);
+  if (!current) {
+    throw new Error("Application not found");
+  }
+  if (current.kanbanStage === parsedStage) {
+    return current;
+  }
+
+  const now = new Date();
+  const [application] = await db
+    .update(applications)
+    .set({
+      kanbanStage: parsedStage,
+      hiredAt: parsedStage === "hired" ? now : current.hiredAt,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(applications.id, applicationId),
+        eq(applications.userId, userId),
+      ),
+    )
+    .returning();
+
+  if (!application) {
+    throw new Error("Application not found");
+  }
+
+  await createAgentEvent({
+    userId,
+    jobId: application.jobId,
+    applicationId: application.id,
+    eventType: "user_action",
+    summary: `Moved ${current.job.title} to ${KANBAN_STAGE_LABELS[parsedStage]}.`,
+    details: { previousStage: current.kanbanStage, nextStage: parsedStage },
+  });
+
+  if (parsedStage === "hired") {
+    await onUserHired(userId);
+  }
+
   return application;
 }

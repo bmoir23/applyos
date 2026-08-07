@@ -1,8 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 
 import { requireAppUser } from "@/lib/auth";
+import {
+  capturePostHogEvent,
+  getPostHogSessionId,
+} from "@/lib/posthog-server";
 import { saveBaseResume } from "@/lib/services/resumes";
 import { saveProfile } from "@/lib/services/users";
 import { profileFormSchema } from "@/lib/validators";
@@ -21,6 +26,11 @@ export async function saveProfileAction(
 
     await saveProfile(appUser.id, values);
     await saveBaseResume(appUser.id, values.baseResumeText);
+    await capturePostHogEvent({
+      distinctId: appUser.clerkUserId,
+      event: "profile_saved",
+      sessionId: getPostHogSessionId(await headers()),
+    });
 
     revalidatePath("/dashboard");
     revalidatePath("/settings");

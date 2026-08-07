@@ -6,10 +6,12 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  real,
   text,
   timestamp,
   uniqueIndex,
   uuid,
+  vector,
   varchar,
 } from "drizzle-orm/pg-core";
 
@@ -63,6 +65,47 @@ export const agentEventTypeEnum = pgEnum("agent_event_type", [
   "create_agent_event",
   "workflow_run",
   "user_action",
+  "profile_ingest",
+  "embed_job",
+  "embed_profile",
+  "prepare_application",
+  "send_email",
+  "create_calendar_event",
+  "tribe_unlock",
+  "milestone_generate",
+]);
+
+export const kanbanStageEnum = pgEnum("kanban_stage", [
+  "applied",
+  "follow_up_needed",
+  "waiting_to_hear_back",
+  "interview_scheduled",
+  "interview_completed",
+  "waiting_for_offer",
+  "offer_pending",
+  "rejected_closed",
+  "hired",
+]);
+
+export const approvalStatusEnum = pgEnum("approval_status", [
+  "pending",
+  "approved",
+  "rejected",
+  "expired",
+  "cancelled",
+]);
+
+export const approvalActionTypeEnum = pgEnum("approval_action_type", [
+  "external_submit",
+  "send_email",
+  "create_calendar_event",
+  "apply_email_status",
+  "publish_document",
+]);
+
+export const emailDirectionEnum = pgEnum("email_direction", [
+  "inbound",
+  "outbound",
 ]);
 
 const timestamps = {
@@ -83,8 +126,15 @@ export const users = pgTable("users", {
   firstName: varchar("first_name", { length: 120 }),
   lastName: varchar("last_name", { length: 120 }),
   imageUrl: text("image_url"),
+  emailSubdomain: varchar("email_subdomain", { length: 120 }),
+  hiredAt: timestamp("hired_at", { withTimezone: true }),
+  communityUnlockedAt: timestamp("community_unlocked_at", {
+    withTimezone: true,
+  }),
   ...timestamps,
-});
+}, (table) => [
+  uniqueIndex("users_email_subdomain_unique").on(table.emailSubdomain),
+]);
 
 export const userProfiles = pgTable("user_profiles", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -114,6 +164,15 @@ export const userProfiles = pgTable("user_profiles", {
   onboardingCompletedAt: timestamp("onboarding_completed_at", {
     withTimezone: true,
   }),
+  linkedinUrl: text("linkedin_url"),
+  nonNegotiables: jsonb("non_negotiables").$type<string[]>(),
+  scorecardData: jsonb("scorecard_data").$type<Record<string, unknown>>(),
+  profileEmbedding: vector("profile_embedding", { dimensions: 768 }),
+  embeddingModel: varchar("embedding_model", { length: 120 }),
+  embeddingPooling: varchar("embedding_pooling", { length: 64 }),
+  embeddingContentHash: varchar("embedding_content_hash", { length: 128 }),
+  embeddedAt: timestamp("embedded_at", { withTimezone: true }),
+  onboardingStep: varchar("onboarding_step", { length: 64 }),
   ...timestamps,
 });
 
@@ -200,6 +259,14 @@ export const jobs = pgTable("jobs", {
     string[]
   >(),
   scoredAt: timestamp("scored_at", { withTimezone: true }),
+  jobEmbedding: vector("job_embedding", { dimensions: 768 }),
+  embeddingModel: varchar("embedding_model", { length: 120 }),
+  embeddingPooling: varchar("embedding_pooling", { length: 64 }),
+  embeddingContentHash: varchar("embedding_content_hash", { length: 128 }),
+  embeddedAt: timestamp("embedded_at", { withTimezone: true }),
+  matchBadges: jsonb("match_badges").$type<string[]>(),
+  semanticScore: integer("semantic_score"),
+  cosineDistance: real("cosine_distance"),
   ...timestamps,
 }, (table) => [
   uniqueIndex("jobs_user_source_url_unique").on(table.userId, table.sourceUrl),
@@ -245,11 +312,17 @@ export const applications = pgTable("applications", {
   userApprovedExternalSubmit: boolean("user_approved_external_submit")
     .default(false)
     .notNull(),
+  kanbanStage: kanbanStageEnum("kanban_stage").default("applied").notNull(),
+  hiredAt: timestamp("hired_at", { withTimezone: true }),
   ...timestamps,
 }, (table) => [
   uniqueIndex("applications_user_job_unique").on(table.userId, table.jobId),
   index("applications_user_status_idx").on(table.userId, table.status),
   index("applications_follow_up_idx").on(table.userId, table.followUpAt),
+  index("applications_user_kanban_stage_idx").on(
+    table.userId,
+    table.kanbanStage,
+  ),
 ]);
 
 export const coverLetters = pgTable("cover_letters", {
@@ -273,6 +346,65 @@ export const coverLetters = pgTable("cover_letters", {
   index("cover_letters_application_id_idx").on(table.applicationId),
 ]);
 
+export const approvalRequests = pgTable("approval_requests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  actionType: approvalActionTypeEnum("action_type").notNull(),
+  status: approvalStatusEnum("status").default("pending").notNull(),
+  resourceType: varchar("resource_type", { length: 64 }).notNull(),
+  resourceId: uuid("resource_id").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>(),
+  rationale: text("rationale"),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  decidedByUserId: uuid("decided_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  ...timestamps,
+}, (table) => [
+  index("approval_requests_user_status_idx").on(table.userId, table.status),
+  index("approval_requests_resource_idx").on(
+    table.resourceType,
+    table.resourceId,
+  ),
+]);
+
+export const emailIdentities = pgTable("email_identities", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: "cascade" }),
+  subdomain: varchar("subdomain", { length: 120 }).notNull(),
+  displayAddress: varchar("display_address", { length: 320 }).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("email_identities_subdomain_unique").on(table.subdomain),
+]);
+
+export const emailThreads = pgTable("email_threads", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  applicationId: uuid("application_id").references(() => applications.id, {
+    onDelete: "set null",
+  }),
+  subject: varchar("subject", { length: 500 }),
+  lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
+  ...timestamps,
+}, (table) => [
+  index("email_threads_user_id_idx").on(table.userId),
+  index("email_threads_application_id_idx").on(table.applicationId),
+  index("email_threads_user_last_message_idx").on(
+    table.userId,
+    table.lastMessageAt,
+  ),
+]);
+
 export const emailMessages = pgTable("email_messages", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id")
@@ -292,10 +424,228 @@ export const emailMessages = pgTable("email_messages", {
   statusSuggestionAppliedAt: timestamp("status_suggestion_applied_at", {
     withTimezone: true,
   }),
+  threadId: uuid("thread_id").references(() => emailThreads.id, {
+    onDelete: "set null",
+  }),
+  messageId: varchar("message_id", { length: 512 }),
+  direction: emailDirectionEnum("direction"),
+  draftBodyText: text("draft_body_text"),
+  draftSubject: varchar("draft_subject", { length: 500 }),
+  sendApprovedAt: timestamp("send_approved_at", { withTimezone: true }),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  providerMessageId: varchar("provider_message_id", { length: 512 }),
+  attachmentMeta: jsonb("attachment_meta").$type<
+    Array<{
+      filename: string;
+      contentType?: string;
+      sizeBytes?: number;
+      url?: string;
+    }>
+  >(),
   ...timestamps,
 }, (table) => [
   index("email_messages_user_id_idx").on(table.userId),
   index("email_messages_application_id_idx").on(table.applicationId),
+  index("email_messages_thread_id_idx").on(table.threadId),
+  uniqueIndex("email_messages_message_id_unique").on(table.messageId),
+]);
+
+export const calendarEvents = pgTable("calendar_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  applicationId: uuid("application_id").references(() => applications.id, {
+    onDelete: "set null",
+  }),
+  title: varchar("title", { length: 255 }).notNull(),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }),
+  location: text("location"),
+  icsContent: text("ics_content"),
+  approvalRequestId: uuid("approval_request_id").references(
+    () => approvalRequests.id,
+    { onDelete: "set null" },
+  ),
+  externalEventId: varchar("external_event_id", { length: 255 }),
+  ...timestamps,
+}, (table) => [
+  index("calendar_events_user_id_idx").on(table.userId),
+  index("calendar_events_application_id_idx").on(table.applicationId),
+  index("calendar_events_starts_at_idx").on(table.userId, table.startsAt),
+]);
+
+export const applicationPackets = pgTable("application_packets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  jobId: uuid("job_id")
+    .notNull()
+    .references(() => jobs.id, { onDelete: "cascade" }),
+  applicationId: uuid("application_id").references(() => applications.id, {
+    onDelete: "set null",
+  }),
+  resumeVersionId: uuid("resume_version_id").references(
+    () => resumeVersions.id,
+    { onDelete: "set null" },
+  ),
+  coverLetterId: uuid("cover_letter_id").references(() => coverLetters.id, {
+    onDelete: "set null",
+  }),
+  promptInstructions: text("prompt_instructions"),
+  status: varchar("status", { length: 64 }).default("draft").notNull(),
+  ...timestamps,
+}, (table) => [
+  index("application_packets_user_id_idx").on(table.userId),
+  index("application_packets_job_id_idx").on(table.jobId),
+  index("application_packets_application_id_idx").on(table.applicationId),
+]);
+
+export const tribes = pgTable("tribes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  slug: varchar("slug", { length: 120 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("tribes_slug_unique").on(table.slug),
+]);
+
+export const tribeMemberships = pgTable("tribe_memberships", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  tribeId: uuid("tribe_id")
+    .notNull()
+    .references(() => tribes.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  role: varchar("role", { length: 64 }).default("member").notNull(),
+  joinedAt: timestamp("joined_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("tribe_memberships_tribe_user_unique").on(
+    table.tribeId,
+    table.userId,
+  ),
+  index("tribe_memberships_user_id_idx").on(table.userId),
+]);
+
+export const tribePosts = pgTable("tribe_posts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  tribeId: uuid("tribe_id")
+    .notNull()
+    .references(() => tribes.id, { onDelete: "cascade" }),
+  authorUserId: uuid("author_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 255 }).notNull(),
+  bodyMarkdown: text("body_markdown").notNull(),
+  ...timestamps,
+}, (table) => [
+  index("tribe_posts_tribe_id_idx").on(table.tribeId),
+  index("tribe_posts_author_user_id_idx").on(table.authorUserId),
+  index("tribe_posts_tribe_created_idx").on(table.tribeId, table.createdAt),
+]);
+
+export const tribePostReplies = pgTable("tribe_post_replies", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  postId: uuid("post_id")
+    .notNull()
+    .references(() => tribePosts.id, { onDelete: "cascade" }),
+  authorUserId: uuid("author_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  bodyMarkdown: text("body_markdown").notNull(),
+  ...timestamps,
+}, (table) => [
+  index("tribe_post_replies_post_id_idx").on(table.postId),
+  index("tribe_post_replies_author_user_id_idx").on(table.authorUserId),
+]);
+
+export const careerMilestones = pgTable("career_milestones", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  planType: varchar("plan_type", { length: 64 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  contentMarkdown: text("content_markdown").notNull(),
+  status: varchar("status", { length: 64 }).default("draft").notNull(),
+  approvalRequestId: uuid("approval_request_id").references(
+    () => approvalRequests.id,
+    { onDelete: "set null" },
+  ),
+  ...timestamps,
+}, (table) => [
+  index("career_milestones_user_id_idx").on(table.userId),
+  index("career_milestones_user_plan_type_idx").on(table.userId, table.planType),
+]);
+
+export const careerAchievements = pgTable("career_achievements", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  achievedAt: timestamp("achieved_at", { withTimezone: true }),
+  evidenceUrl: text("evidence_url"),
+  ...timestamps,
+}, (table) => [
+  index("career_achievements_user_id_idx").on(table.userId),
+]);
+
+export const compensationEntries = pgTable("compensation_entries", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 255 }).notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  currency: varchar("currency", { length: 8 }).default("USD").notNull(),
+  effectiveAt: timestamp("effective_at", { withTimezone: true }),
+  notes: text("notes"),
+  ...timestamps,
+}, (table) => [
+  index("compensation_entries_user_id_idx").on(table.userId),
+]);
+
+export const mentorshipOffers = pgTable("mentorship_offers", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  tribeId: uuid("tribe_id").references(() => tribes.id, {
+    onDelete: "set null",
+  }),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  isActive: boolean("is_active").default(true).notNull(),
+  ...timestamps,
+}, (table) => [
+  index("mentorship_offers_user_id_idx").on(table.userId),
+  index("mentorship_offers_tribe_id_idx").on(table.tribeId),
+]);
+
+export const referralRequests = pgTable("referral_requests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  requesterUserId: uuid("requester_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  helperUserId: uuid("helper_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  companyName: varchar("company_name", { length: 255 }).notNull(),
+  roleTitle: varchar("role_title", { length: 255 }).notNull(),
+  status: varchar("status", { length: 64 }).default("pending").notNull(),
+  notes: text("notes"),
+  ...timestamps,
+}, (table) => [
+  index("referral_requests_requester_user_id_idx").on(table.requesterUserId),
+  index("referral_requests_helper_user_id_idx").on(table.helperUserId),
 ]);
 
 export const workflowRuns = pgTable("workflow_runs", {
@@ -350,6 +700,30 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   coverLetters: many(coverLetters),
   emailMessages: many(emailMessages),
   agentEvents: many(agentEvents),
+  emailIdentity: one(emailIdentities, {
+    fields: [users.id],
+    references: [emailIdentities.userId],
+  }),
+  approvalRequests: many(approvalRequests),
+  approvalDecisions: many(approvalRequests, {
+    relationName: "approvalDecidedBy",
+  }),
+  emailThreads: many(emailThreads),
+  calendarEvents: many(calendarEvents),
+  applicationPackets: many(applicationPackets),
+  tribeMemberships: many(tribeMemberships),
+  tribePosts: many(tribePosts),
+  tribePostReplies: many(tribePostReplies),
+  careerMilestones: many(careerMilestones),
+  careerAchievements: many(careerAchievements),
+  compensationEntries: many(compensationEntries),
+  mentorshipOffers: many(mentorshipOffers),
+  referralRequestsSent: many(referralRequests, {
+    relationName: "referralRequester",
+  }),
+  referralRequestsReceived: many(referralRequests, {
+    relationName: "referralHelper",
+  }),
 }));
 
 export const userProfilesRelations = relations(userProfiles, ({ one }) => ({
@@ -367,17 +741,21 @@ export const resumesRelations = relations(resumes, ({ one, many }) => ({
   versions: many(resumeVersions),
 }));
 
-export const resumeVersionsRelations = relations(resumeVersions, ({ one, many }) => ({
-  resume: one(resumes, {
-    fields: [resumeVersions.resumeId],
-    references: [resumes.id],
+export const resumeVersionsRelations = relations(
+  resumeVersions,
+  ({ one, many }) => ({
+    resume: one(resumes, {
+      fields: [resumeVersions.resumeId],
+      references: [resumes.id],
+    }),
+    job: one(jobs, {
+      fields: [resumeVersions.jobId],
+      references: [jobs.id],
+    }),
+    applications: many(applications),
+    applicationPackets: many(applicationPackets),
   }),
-  job: one(jobs, {
-    fields: [resumeVersions.jobId],
-    references: [jobs.id],
-  }),
-  applications: many(applications),
-}));
+);
 
 export const companiesRelations = relations(companies, ({ many }) => ({
   jobs: many(jobs),
@@ -412,6 +790,7 @@ export const jobsRelations = relations(jobs, ({ one, many }) => ({
   applications: many(applications),
   coverLetters: many(coverLetters),
   resumeVersions: many(resumeVersions),
+  applicationPackets: many(applicationPackets),
 }));
 
 export const applicationsRelations = relations(
@@ -432,10 +811,13 @@ export const applicationsRelations = relations(
     coverLetters: many(coverLetters),
     emailMessages: many(emailMessages),
     agentEvents: many(agentEvents),
+    emailThreads: many(emailThreads),
+    calendarEvents: many(calendarEvents),
+    applicationPackets: many(applicationPackets),
   }),
 );
 
-export const coverLettersRelations = relations(coverLetters, ({ one }) => ({
+export const coverLettersRelations = relations(coverLetters, ({ one, many }) => ({
   user: one(users, {
     fields: [coverLetters.userId],
     references: [users.id],
@@ -448,7 +830,47 @@ export const coverLettersRelations = relations(coverLetters, ({ one }) => ({
     fields: [coverLetters.applicationId],
     references: [applications.id],
   }),
+  applicationPackets: many(applicationPackets),
 }));
+
+export const approvalRequestsRelations = relations(
+  approvalRequests,
+  ({ one, many }) => ({
+    user: one(users, {
+      fields: [approvalRequests.userId],
+      references: [users.id],
+    }),
+    decidedBy: one(users, {
+      fields: [approvalRequests.decidedByUserId],
+      references: [users.id],
+      relationName: "approvalDecidedBy",
+    }),
+    calendarEvents: many(calendarEvents),
+    careerMilestones: many(careerMilestones),
+  }),
+);
+
+export const emailIdentitiesRelations = relations(emailIdentities, ({ one }) => ({
+  user: one(users, {
+    fields: [emailIdentities.userId],
+    references: [users.id],
+  }),
+}));
+
+export const emailThreadsRelations = relations(
+  emailThreads,
+  ({ one, many }) => ({
+    user: one(users, {
+      fields: [emailThreads.userId],
+      references: [users.id],
+    }),
+    application: one(applications, {
+      fields: [emailThreads.applicationId],
+      references: [applications.id],
+    }),
+    messages: many(emailMessages),
+  }),
+);
 
 export const emailMessagesRelations = relations(emailMessages, ({ one }) => ({
   user: one(users, {
@@ -459,7 +881,162 @@ export const emailMessagesRelations = relations(emailMessages, ({ one }) => ({
     fields: [emailMessages.applicationId],
     references: [applications.id],
   }),
+  thread: one(emailThreads, {
+    fields: [emailMessages.threadId],
+    references: [emailThreads.id],
+  }),
 }));
+
+export const calendarEventsRelations = relations(calendarEvents, ({ one }) => ({
+  user: one(users, {
+    fields: [calendarEvents.userId],
+    references: [users.id],
+  }),
+  application: one(applications, {
+    fields: [calendarEvents.applicationId],
+    references: [applications.id],
+  }),
+  approvalRequest: one(approvalRequests, {
+    fields: [calendarEvents.approvalRequestId],
+    references: [approvalRequests.id],
+  }),
+}));
+
+export const applicationPacketsRelations = relations(
+  applicationPackets,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [applicationPackets.userId],
+      references: [users.id],
+    }),
+    job: one(jobs, {
+      fields: [applicationPackets.jobId],
+      references: [jobs.id],
+    }),
+    application: one(applications, {
+      fields: [applicationPackets.applicationId],
+      references: [applications.id],
+    }),
+    resumeVersion: one(resumeVersions, {
+      fields: [applicationPackets.resumeVersionId],
+      references: [resumeVersions.id],
+    }),
+    coverLetter: one(coverLetters, {
+      fields: [applicationPackets.coverLetterId],
+      references: [coverLetters.id],
+    }),
+  }),
+);
+
+export const tribesRelations = relations(tribes, ({ many }) => ({
+  memberships: many(tribeMemberships),
+  posts: many(tribePosts),
+  mentorshipOffers: many(mentorshipOffers),
+}));
+
+export const tribeMembershipsRelations = relations(
+  tribeMemberships,
+  ({ one }) => ({
+    tribe: one(tribes, {
+      fields: [tribeMemberships.tribeId],
+      references: [tribes.id],
+    }),
+    user: one(users, {
+      fields: [tribeMemberships.userId],
+      references: [users.id],
+    }),
+  }),
+);
+
+export const tribePostsRelations = relations(tribePosts, ({ one, many }) => ({
+  tribe: one(tribes, {
+    fields: [tribePosts.tribeId],
+    references: [tribes.id],
+  }),
+  author: one(users, {
+    fields: [tribePosts.authorUserId],
+    references: [users.id],
+  }),
+  replies: many(tribePostReplies),
+}));
+
+export const tribePostRepliesRelations = relations(
+  tribePostReplies,
+  ({ one }) => ({
+    post: one(tribePosts, {
+      fields: [tribePostReplies.postId],
+      references: [tribePosts.id],
+    }),
+    author: one(users, {
+      fields: [tribePostReplies.authorUserId],
+      references: [users.id],
+    }),
+  }),
+);
+
+export const careerMilestonesRelations = relations(
+  careerMilestones,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [careerMilestones.userId],
+      references: [users.id],
+    }),
+    approvalRequest: one(approvalRequests, {
+      fields: [careerMilestones.approvalRequestId],
+      references: [approvalRequests.id],
+    }),
+  }),
+);
+
+export const careerAchievementsRelations = relations(
+  careerAchievements,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [careerAchievements.userId],
+      references: [users.id],
+    }),
+  }),
+);
+
+export const compensationEntriesRelations = relations(
+  compensationEntries,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [compensationEntries.userId],
+      references: [users.id],
+    }),
+  }),
+);
+
+export const mentorshipOffersRelations = relations(
+  mentorshipOffers,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [mentorshipOffers.userId],
+      references: [users.id],
+    }),
+    tribe: one(tribes, {
+      fields: [mentorshipOffers.tribeId],
+      references: [tribes.id],
+    }),
+  }),
+);
+
+export const referralRequestsRelations = relations(
+  referralRequests,
+  ({ one }) => ({
+    requester: one(users, {
+      fields: [referralRequests.requesterUserId],
+      references: [users.id],
+      relationName: "referralRequester",
+    }),
+    helper: one(users, {
+      fields: [referralRequests.helperUserId],
+      references: [users.id],
+      relationName: "referralHelper",
+    }),
+  }),
+);
 
 export const workflowRunsRelations = relations(workflowRuns, ({ one, many }) => ({
   user: one(users, {

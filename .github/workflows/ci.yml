@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "bmoir23/**"]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: Validate migration journal
+        run: |
+          test -f db/migrations/0002_prd_expansion.sql
+          node -e "const j=require('./db/migrations/meta/_journal.json'); if(!j.entries.some(e=>e.tag==='0002_prd_expansion')) process.exit(1)"
+      - name: Secret scan (basic)
+        run: |
+          if git grep -nE '(sk_live_|sk_test_[A-Za-z0-9]{20,}|BEGIN PRIVATE KEY)' -- ':!.env.example' ':!docs/**' ':!*.md'; then
+            echo "Potential secret detected"
+            exit 1
+          fi
+          echo "No obvious secrets found"
+      - name: Production build
+        env:
+          DATABASE_URL: postgresql://user:password@localhost/dbname?sslmode=require
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_ci
+          CLERK_SECRET_KEY: sk_test_ci
+          NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN: phc_ci
+          NEXT_PUBLIC_POSTHOG_HOST: https://us.i.posthog.com
+        run: pnpm build

@@ -11,10 +11,8 @@ const serverEnvSchema = z.object({
     .enum(["development", "test", "production"])
     .default("development"),
 
-  // Database
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
 
-  // Clerk
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z
     .string()
     .min(1, "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is required"),
@@ -24,19 +22,32 @@ const serverEnvSchema = z.object({
   NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL: z.string().default("/dashboard"),
   NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL: z.string().default("/dashboard"),
 
-  // Phase 3+ (optional until used)
   FIRECRAWL_API_KEY: z.string().optional(),
   N8N_WEBHOOK_SECRET: z.string().optional(),
+  N8N_HMAC_SECRET: z.string().optional(),
+  N8N_WEBHOOK_URL: z.string().url().optional(),
 
-  // AI provider abstraction (Phase 4+)
   AI_PROVIDER: z
     .enum(["openai-compatible", "cloudflare", "gateway"])
     .default("openai-compatible"),
-
   AI_API_KEY: z.string().optional(),
   AI_BASE_URL: z.string().optional(),
   AI_MODEL: z.string().optional(),
   AI_GATEWAY_ID: z.string().optional(),
+
+  CLOUDFLARE_ACCOUNT_ID: z.string().optional(),
+  CLOUDFLARE_API_TOKEN: z.string().optional(),
+  EMBEDDING_MODEL: z.string().default("@cf/baai/bge-base-en-v1.5"),
+  EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(768),
+  EMBEDDING_POOLING: z.enum(["cls", "mean"]).default("cls"),
+
+  EMAIL_INBOUND_DOMAIN: z.string().default("inbound.applyos.me"),
+  EMAIL_OUTBOUND_DOMAIN: z.string().default("mail.applyos.me"),
+  EMAIL_WORKER_HMAC_SECRET: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_WEBHOOK_SECRET: z.string().optional(),
+
+  FEATURE_FLAGS: z.string().optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
@@ -47,10 +58,6 @@ function formatEnvErrors(error: z.ZodError): string {
     .join("\n");
 }
 
-/**
- * Validates and returns server env.
- * Call from server-only modules (route handlers, server actions, lib/db).
- */
 export function getServerEnv(): ServerEnv {
   const parsed = serverEnvSchema.safeParse(process.env);
 
@@ -63,10 +70,6 @@ export function getServerEnv(): ServerEnv {
   return parsed.data;
 }
 
-/**
- * Lazy proxy so importing this module does not crash during build
- * when env vars are not yet configured. Access throws if invalid.
- */
 let cachedEnv: ServerEnv | null = null;
 
 export const env: ServerEnv = new Proxy({} as ServerEnv, {
@@ -77,3 +80,22 @@ export const env: ServerEnv = new Proxy({} as ServerEnv, {
     return cachedEnv[prop as keyof ServerEnv];
   },
 });
+
+export type FeatureFlag =
+  | "semantic_matching"
+  | "kanban"
+  | "inbox"
+  | "tribes"
+  | "hitl_workspace"
+  | "profile_ingestion";
+
+export function isFeatureEnabled(flag: FeatureFlag): boolean {
+  const raw = env.FEATURE_FLAGS;
+  if (!raw || raw.trim() === "") {
+    return env.NODE_ENV === "development" || env.NODE_ENV === "test";
+  }
+  return raw
+    .split(",")
+    .map((part) => part.trim())
+    .includes(flag);
+}

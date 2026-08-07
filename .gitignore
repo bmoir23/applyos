@@ -37,8 +37,19 @@ yarn-error.log*
 !.env.example
 
 
-# vercel
+# vercel / netlify
 .vercel
+.netlify
+
+# local secrets (non-dot naming)
+env.local
+/*.local
+
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
 
 # typescript
 *.tsbuildinfo

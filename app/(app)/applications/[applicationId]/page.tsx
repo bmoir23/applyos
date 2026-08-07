@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 
 import { ApplicationEditor } from "@/components/applications/application-editor";
+import { HiredCelebration } from "@/components/applications/hired-celebration";
 import { EmailSuggestion } from "@/components/applications/email-suggestion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { requireOnboardedAppUser } from "@/lib/auth";
+import { KANBAN_STAGE_LABELS } from "@/lib/kanban/stages";
 import { getOwnedApplication } from "@/lib/services/applications";
 
 export const metadata: Metadata = {
@@ -35,9 +37,21 @@ export default async function ApplicationDetailPage({
 
   return (
     <div className="flex flex-col gap-6">
+      {application.kanbanStage === "hired" && (
+        <HiredCelebration
+          jobTitle={application.job.title}
+          companyName={application.job.company?.name ?? "Unknown company"}
+        />
+      )}
+
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Badge>{application.status}</Badge>
+          <div className="flex flex-wrap gap-2">
+            <Badge>{application.status}</Badge>
+            <Badge variant="outline">
+              {KANBAN_STAGE_LABELS[application.kanbanStage]}
+            </Badge>
+          </div>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">
             {application.job.title}
           </h1>

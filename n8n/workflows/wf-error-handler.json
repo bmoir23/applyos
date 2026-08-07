@@ -1,0 +1,61 @@
+{
+  "name": "ApplyOS — Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "e1f2a3b4-c5d6-7890-4567-901234567890",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.APPLYOS_BASE_URL}}/api/internal/automation",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-n8n-webhook-secret",
+              "value": "={{$env.N8N_WEBHOOK_SECRET}}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ event: 'create_agent_event', userId: 'USER_UUID', idempotencyKey: 'error-' + $execution.id, payload: { eventType: 'system_error', summary: 'n8n workflow failed: ' + ($json.workflow?.name ?? 'unknown'), details: { executionId: $execution.id, workflowId: $json.workflow?.id, error: $json.execution?.error?.message } } }) }}"
+      },
+      "id": "f2a3b4c5-d6e7-8901-5678-012345678901",
+      "name": "Log Agent Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [300, 0]
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Log Agent Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "ApplyOS — Error Handler"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

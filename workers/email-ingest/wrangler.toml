@@ -1,0 +1,11 @@
+# ApplyOS email ingest worker — forwards inbound mail to the app webhook.
+name = "applyos-email-ingest"
+main = "src/index.ts"
+compatibility_date = "2024-08-01"
+
+# Set via `wrangler secret put`:
+# - EMAIL_WORKER_HMAC_SECRET
+# - APPLYOS_EMAIL_WEBHOOK_URL
+
+[observability]
+enabled = true

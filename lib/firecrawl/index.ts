@@ -120,3 +120,80 @@ function hostnameToCompany(hostname: string) {
   const segment = hostname.replace(/^www\./, "").split(".")[0] ?? "Company";
   return segment.charAt(0).toUpperCase() + segment.slice(1);
 }
+
+const profileExtractionSchema = z.object({
+  fullName: z.string().trim().optional(),
+  headline: z.string().trim().optional(),
+  summary: z.string().trim().optional(),
+  skills: z.array(z.string().trim().min(1)).max(50).default([]),
+  experienceSummary: z.string().trim().optional(),
+});
+
+export type ExtractedPublicProfile = {
+  mode: "live" | "mock";
+  fullName?: string;
+  headline?: string;
+  summary?: string;
+  skills: string[];
+  experienceSummary?: string;
+  rawMarkdown?: string;
+};
+
+export async function extractPublicProfile(
+  url: string,
+): Promise<ExtractedPublicProfile> {
+  await assertSafePublicUrl(url);
+
+  if (!env.FIRECRAWL_API_KEY) {
+    return createMockProfile(url);
+  }
+
+  const firecrawl = new Firecrawl({
+    apiKey: env.FIRECRAWL_API_KEY,
+    timeoutMs: 30_000,
+    maxRetries: 2,
+  });
+  const document = await firecrawl.scrape(url, {
+    onlyMainContent: true,
+    timeout: 25_000,
+    formats: [
+      "markdown",
+      {
+        type: "json",
+        schema: profileExtractionSchema,
+        prompt:
+          "Extract public profile details from this page. Return skills explicitly listed. Summarize experience without inventing employers or credentials.",
+      },
+    ],
+  });
+
+  const parsed = profileExtractionSchema.safeParse(document.json);
+  if (!parsed.success) {
+    throw new Error("Firecrawl returned an invalid profile extraction");
+  }
+
+  return {
+    mode: "live",
+    fullName: parsed.data.fullName,
+    headline: parsed.data.headline,
+    summary: parsed.data.summary,
+    skills: parsed.data.skills,
+    experienceSummary: parsed.data.experienceSummary,
+    rawMarkdown: document.markdown,
+  };
+}
+
+function createMockProfile(url: string): ExtractedPublicProfile {
+  const hostname = new URL(url).hostname.replace(/^www\./, "");
+  return {
+    mode: "mock",
+    fullName: "[Mock] Alex Candidate",
+    headline: "[Mock] Senior product engineer (sample data)",
+    summary:
+      "Mock LinkedIn import generated because `FIRECRAWL_API_KEY` is not configured. Review these fields before relying on them.",
+    skills: ["TypeScript", "React", "Node.js", "Postgres"],
+    experienceSummary:
+      "[Mock] 8 years building customer-facing web applications across startups and growth-stage companies.",
+    rawMarkdown: `# [Mock] Alex Candidate\n\nMock profile imported from ${hostname}. Configure Firecrawl for live extraction.`,
+  };
+}

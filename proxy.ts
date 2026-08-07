@@ -5,10 +5,15 @@ const isProtectedRoute = createRouteMatcher([
   "/onboarding(.*)",
   "/jobs(.*)",
   "/applications(.*)",
+  "/approvals(.*)",
+  "/inbox(.*)",
+  "/tribes(.*)",
+  "/career(.*)",
   "/resumes(.*)",
   "/settings(.*)",
   "/api/jobs(.*)",
   "/api/documents(.*)",
+  "/api/profile(.*)",
 ]);
 
 /**

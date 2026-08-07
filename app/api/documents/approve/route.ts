@@ -3,6 +3,10 @@ import { z } from "zod";
 
 import { requireAppUser } from "@/lib/auth";
 import {
+  capturePostHogEvent,
+  getPostHogSessionId,
+} from "@/lib/posthog-server";
+import {
   approveCoverLetter,
   approveResumeVersion,
 } from "@/lib/services/documents";
@@ -21,6 +25,12 @@ export async function POST(request: Request) {
       input.documentType === "resume"
         ? await approveResumeVersion(appUser.id, input.documentId)
         : await approveCoverLetter(appUser.id, input.documentId);
+    await capturePostHogEvent({
+      distinctId: appUser.clerkUserId,
+      event: "document_approved",
+      properties: { document_type: input.documentType },
+      sessionId: getPostHogSessionId(request.headers),
+    });
     return Response.json(document);
   } catch (error) {
     if (error instanceof z.ZodError) {

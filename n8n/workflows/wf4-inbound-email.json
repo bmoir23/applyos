@@ -1,0 +1,66 @@
+{
+  "name": "ApplyOS WF4 — Inbound Email",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "applyos-inbound-email",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "c9d0e1f2-a3b4-5678-2345-789012345678",
+      "name": "Inbound Email Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "applyos-inbound-email"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.APPLYOS_BASE_URL}}/api/internal/automation",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-n8n-webhook-secret",
+              "value": "={{$env.N8N_WEBHOOK_SECRET}}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ event: 'classify_email_status', userId: $json.body.userId ?? 'USER_UUID', idempotencyKey: 'email-' + ($json.body.messageId ?? $execution.id), payload: { applicationId: $json.body.applicationId, subject: $json.body.subject, fromAddress: $json.body.fromAddress, toAddress: $json.body.toAddress, bodyText: $json.body.bodyText, receivedAt: $json.body.receivedAt } }) }}"
+      },
+      "id": "d0e1f2a3-b4c5-6789-3456-890123456789",
+      "name": "Classify Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [300, 0]
+    }
+  ],
+  "connections": {
+    "Inbound Email Webhook": {
+      "main": [
+        [
+          {
+            "node": "Classify Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

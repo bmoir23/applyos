@@ -2,6 +2,10 @@ import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
 
 import { requireAppUser } from "@/lib/auth";
+import {
+  capturePostHogEvent,
+  getPostHogSessionId,
+} from "@/lib/posthog-server";
 import { generateCoverLetter } from "@/lib/services/documents";
 import { generateCoverLetterInputSchema } from "@/lib/validators";
 
@@ -16,9 +20,14 @@ export async function POST(request: Request) {
       await request.json(),
     );
     const appUser = await requireAppUser();
-    return Response.json(
-      await generateCoverLetter(appUser.id, jobId, tone),
-    );
+    const coverLetter = await generateCoverLetter(appUser.id, jobId, tone);
+    await capturePostHogEvent({
+      distinctId: appUser.clerkUserId,
+      event: "cover_letter_generated",
+      properties: { tone },
+      sessionId: getPostHogSessionId(request.headers),
+    });
+    return Response.json(coverLetter);
   } catch (error) {
     if (error instanceof z.ZodError) {
       return Response.json({ error: "Invalid request" }, { status: 400 });

@@ -128,3 +128,30 @@
     @apply font-sans;
   }
 }
+
+.hitl-confetti-piece {
+  position: absolute;
+  top: -12px;
+  width: 8px;
+  height: 12px;
+  opacity: 0.85;
+  animation: hitl-confetti-fall 2.8s ease-in forwards;
+}
+
+@keyframes hitl-confetti-fall {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(140px) rotate(540deg);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hitl-confetti-piece {
+    animation: none;
+    display: none;
+  }
+}

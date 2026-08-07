@@ -37,7 +37,45 @@ export const agentEventTypeSchema = z.enum([
   "create_agent_event",
   "workflow_run",
   "user_action",
+  "profile_ingest",
+  "embed_job",
+  "embed_profile",
+  "prepare_application",
+  "send_email",
+  "create_calendar_event",
+  "tribe_unlock",
+  "milestone_generate",
 ]);
+
+export const kanbanStageSchema = z.enum([
+  "applied",
+  "follow_up_needed",
+  "waiting_to_hear_back",
+  "interview_scheduled",
+  "interview_completed",
+  "waiting_for_offer",
+  "offer_pending",
+  "rejected_closed",
+  "hired",
+]);
+
+export const matchBadgeSchema = z.enum([
+  "best_match",
+  "skills_aligned",
+  "high_interview_probability",
+  "great_career_fit",
+]);
+
+export const scorecardDataSchema = z.object({
+  competencies: z.array(z.string()).max(24),
+  targetRoles: z.array(z.string()).max(12),
+  nonNegotiables: z.array(z.string()).max(12),
+  matchThreshold: z.number().int().min(0).max(100),
+  confidence: z.number().int().min(0).max(100),
+  skillGaps: z.array(z.string()).max(24),
+  summary: z.string().max(4_000),
+  generatedAt: z.string().optional(),
+});
 
 export const workflowRunStatusSchema = z.enum([
   "pending",
@@ -279,3 +317,49 @@ export type ProfileEditorInput = z.input<typeof profileEditorSchema>;
 export type JobSourceInput = z.infer<typeof jobSourceInputSchema>;
 export type ScoringResult = z.infer<typeof scoringResultSchema>;
 export type ApplicationUpdate = z.infer<typeof applicationUpdateSchema>;
+export type ScorecardData = z.infer<typeof scorecardDataSchema>;
+
+export const profileIngestInputSchema = z
+  .object({
+    source: z.enum(["linkedin", "resume_upload", "questionnaire"]),
+    linkedinUrl: z.url().optional(),
+    resumeText: z.string().trim().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.source === "linkedin") {
+      if (!value.linkedinUrl) {
+        ctx.addIssue({
+          code: "custom",
+          message: "LinkedIn URL is required",
+          path: ["linkedinUrl"],
+        });
+        return;
+      }
+      try {
+        const parsed = new URL(value.linkedinUrl);
+        if (!["http:", "https:"].includes(parsed.protocol)) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Only HTTP and HTTPS URLs are supported",
+            path: ["linkedinUrl"],
+          });
+        }
+      } catch {
+        ctx.addIssue({
+          code: "custom",
+          message: "Enter a valid URL",
+          path: ["linkedinUrl"],
+        });
+      }
+    }
+
+    if (value.source === "resume_upload") {
+      if (!value.resumeText || value.resumeText.length < 100) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Resume text must be at least 100 characters",
+          path: ["resumeText"],
+        });
+      }
+    }
+  });

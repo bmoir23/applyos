@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 
 import { DocumentEditor } from "@/components/documents/document-editor";
+import { ReviewWorkspace } from "@/components/hitl/review-workspace";
 import { JobActions } from "@/components/jobs/job-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { requireOnboardedAppUser } from "@/lib/auth";
+import { createOrGetPacket } from "@/lib/services/packets";
 import { getOwnedJob } from "@/lib/services/jobs";
 import { getPrimaryResume } from "@/lib/services/resumes";
 
@@ -40,6 +42,28 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
   const approvedResume =
     job.resumeVersions.find((version) => version.userApprovedAt) ??
     primaryResume?.versions.find((version) => version.userApprovedAt);
+
+  const latestResume = job.resumeVersions[0];
+  const latestCoverLetter = job.coverLetters[0];
+  const hasDrafts = job.resumeVersions.length > 0 || job.coverLetters.length > 0;
+
+  const packet =
+    hasDrafts
+      ? await createOrGetPacket(appUser.id, jobId, {
+          resumeVersionId: latestResume?.id,
+          coverLetterId: latestCoverLetter?.id,
+        })
+      : null;
+
+  const jobMarkdown = [
+    job.descriptionMarkdown,
+    job.requirementsMarkdown &&
+      `\n\n## Requirements\n\n${job.requirementsMarkdown}`,
+    job.responsibilitiesMarkdown &&
+      `\n\n## Responsibilities\n\n${job.responsibilitiesMarkdown}`,
+  ]
+    .filter(Boolean)
+    .join("");
 
   return (
     <div className="flex flex-col gap-6">
@@ -87,6 +111,39 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
           attached: letter.applicationId === application?.id,
         }))}
       />
+
+      {hasDrafts && (
+        <ReviewWorkspace
+          jobTitle={job.title}
+          companyName={job.company?.name ?? "Unknown company"}
+          jobMarkdown={jobMarkdown || "No job description available."}
+          packetId={packet?.id}
+          resume={
+            latestResume
+              ? {
+                  documentType: "resume",
+                  documentId: latestResume.id,
+                  title: latestResume.versionLabel,
+                  markdown: latestResume.contentMarkdown,
+                  approved: Boolean(latestResume.userApprovedAt),
+                  changeSummary: latestResume.changeSummary,
+                }
+              : undefined
+          }
+          coverLetter={
+            latestCoverLetter
+              ? {
+                  documentType: "cover_letter",
+                  documentId: latestCoverLetter.id,
+                  title: latestCoverLetter.title,
+                  markdown: latestCoverLetter.contentMarkdown,
+                  approved: Boolean(latestCoverLetter.userApprovedAt),
+                  changeSummary: latestCoverLetter.changeSummary,
+                }
+              : undefined
+          }
+        />
+      )}
 
       {job.matchScore !== null ? (
         <Card>

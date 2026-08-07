@@ -1,0 +1,145 @@
+{
+  "name": "ApplyOS WF2 — Discovery & Match",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "name": "Crawl Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.APPLYOS_BASE_URL}}/api/internal/automation",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-n8n-webhook-secret",
+              "value": "={{$env.N8N_WEBHOOK_SECRET}}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ event: 'crawl_source', userId: 'USER_UUID', idempotencyKey: 'crawl-' + $execution.id, payload: { jobSourceId: 'JOB_SOURCE_UUID' } }) }}"
+      },
+      "id": "d4e5f6a7-b8c9-0123-def0-234567890123",
+      "name": "Crawl Source",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [300, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.APPLYOS_BASE_URL}}/api/internal/automation",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-n8n-webhook-secret",
+              "value": "={{$env.N8N_WEBHOOK_SECRET}}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ event: 'embed_job', userId: 'USER_UUID', idempotencyKey: 'embed-' + $json.jobId + '-' + $execution.id, payload: { jobId: $json.jobId } }) }}"
+      },
+      "id": "e5f6a7b8-c9d0-1234-ef01-345678901234",
+      "name": "Embed Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.APPLYOS_BASE_URL}}/api/internal/automation",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-n8n-webhook-secret",
+              "value": "={{$env.N8N_WEBHOOK_SECRET}}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ event: 'score_job', userId: 'USER_UUID', idempotencyKey: 'score-' + $json.jobId + '-' + $execution.id, payload: { jobId: $json.jobId } }) }}"
+      },
+      "id": "f6a7b8c9-d0e1-2345-f012-456789012345",
+      "name": "Score Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 0]
+    }
+  ],
+  "connections": {
+    "Crawl Schedule": {
+      "main": [
+        [
+          {
+            "node": "Crawl Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crawl Source": {
+      "main": [
+        [
+          {
+            "node": "Embed Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed Job": {
+      "main": [
+        [
+          {
+            "node": "Score Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

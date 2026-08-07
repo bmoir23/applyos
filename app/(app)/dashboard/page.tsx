@@ -11,9 +11,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ScorecardPanel } from "@/components/profile/scorecard-panel";
 import { getAppUserProfile, getCurrentUser } from "@/lib/auth";
 import { listApplications } from "@/lib/services/applications";
 import { listJobs } from "@/lib/services/jobs";
+import {
+  scorecardDataSchema,
+  type ScorecardData,
+} from "@/lib/validators";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -32,6 +37,10 @@ export default async function DashboardPage() {
     listApplications(appUser.id),
   ]);
   const firstName = user?.firstName ?? "there";
+  const parsedScorecard = scorecardDataSchema.safeParse(profile.scorecardData);
+  const scorecard: ScorecardData | null = parsedScorecard.success
+    ? parsedScorecard.data
+    : null;
 
   return (
     <div className="flex flex-col gap-8">
@@ -44,6 +53,12 @@ export default async function DashboardPage() {
           manual application pipeline current.
         </p>
       </div>
+
+      {scorecard ? (
+        <ScorecardPanel scorecard={scorecard} showSettingsLink />
+      ) : (
+        <ScorecardPanel scorecard={null} showSettingsLink />
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card>

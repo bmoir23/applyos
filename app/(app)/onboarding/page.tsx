@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { ProfileForm } from "@/components/onboarding/profile-form";
+import { LinkedInImportForm } from "@/components/onboarding/linkedin-import-form";
 import { getAppUserProfile } from "@/lib/auth";
 
 export const metadata: Metadata = {
@@ -28,22 +29,29 @@ export default async function OnboardingPage() {
         </p>
       </div>
       <ProfileForm
+        key={profile.updatedAt?.toISOString() ?? "new"}
         isOnboarding
         initialValues={{
-          targetRolesText: "",
-          targetLocationsText: "",
-          remotePreference: "any",
-          salaryMin: "",
-          salaryMax: "",
-          salaryCurrency: "USD",
-          skillsText: "",
-          workAuthorizationNotes: "",
-          experienceSummary: "",
-          applicationPreferences: "",
-          preferredCoverLetterTone: "professional",
-          baseResumeText: "",
+          targetRolesText: profile.targetRoles.join(", "),
+          targetLocationsText: profile.targetLocations.join(", "),
+          remotePreference: profile.remotePreference,
+          salaryMin: profile.salaryMin?.toString() ?? "",
+          salaryMax: profile.salaryMax?.toString() ?? "",
+          salaryCurrency: profile.salaryCurrency ?? "USD",
+          skillsText: profile.skills.join(", "),
+          workAuthorizationNotes: profile.workAuthorizationNotes ?? "",
+          experienceSummary: profile.experienceSummary ?? "",
+          applicationPreferences: profile.applicationPreferences ?? "",
+          preferredCoverLetterTone:
+            (profile.preferredCoverLetterTone as
+              | "professional"
+              | "warm"
+              | "direct"
+              | "enthusiastic") ?? "professional",
+          baseResumeText: profile.baseResumeText ?? "",
         }}
       />
+      <LinkedInImportForm />
     </div>
   );
 }

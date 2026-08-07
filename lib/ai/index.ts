@@ -10,3 +10,10 @@ export async function generateStructured<T>(
 ): Promise<T> {
   return createAiProvider().generateJson(messages, schema);
 }
+
+export {
+  chunkForEmbedding,
+  embedTexts,
+  hashEmbeddingSource,
+  validateEmbedding,
+} from "@/lib/ai/embeddings";

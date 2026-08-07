@@ -1,0 +1,66 @@
+{
+  "name": "ApplyOS WF3 — Asset Customization",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "applyos-prepare-application",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "a7b8c9d0-e1f2-3456-0123-567890123456",
+      "name": "Prepare Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "applyos-prepare-application"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.APPLYOS_BASE_URL}}/api/internal/automation",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-n8n-webhook-secret",
+              "value": "={{$env.N8N_WEBHOOK_SECRET}}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ event: 'prepare_application', userId: $json.body.userId ?? 'USER_UUID', idempotencyKey: 'prepare-' + ($json.body.jobId ?? 'JOB_UUID') + '-' + $execution.id, payload: { jobId: $json.body.jobId ?? 'JOB_UUID', applicationId: $json.body.applicationId } }) }}"
+      },
+      "id": "b8c9d0e1-f2a3-4567-1234-678901234567",
+      "name": "Prepare Application",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [300, 0]
+    }
+  ],
+  "connections": {
+    "Prepare Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Application",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

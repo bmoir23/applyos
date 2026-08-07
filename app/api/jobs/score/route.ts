@@ -2,6 +2,10 @@ import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
 
 import { requireAppUser } from "@/lib/auth";
+import {
+  capturePostHogEvent,
+  getPostHogSessionId,
+} from "@/lib/posthog-server";
 import { scoreJob } from "@/lib/services/scoring";
 import { scoreJobInputSchema } from "@/lib/validators";
 
@@ -14,7 +18,13 @@ export async function POST(request: Request) {
   try {
     const { jobId } = scoreJobInputSchema.parse(await request.json());
     const appUser = await requireAppUser();
-    return Response.json(await scoreJob(appUser.id, jobId));
+    const score = await scoreJob(appUser.id, jobId);
+    await capturePostHogEvent({
+      distinctId: appUser.clerkUserId,
+      event: "job_scored",
+      sessionId: getPostHogSessionId(request.headers),
+    });
+    return Response.json(score);
   } catch (error) {
     if (error instanceof z.ZodError) {
       return Response.json(

@@ -10,6 +10,12 @@ type ProfileContext = {
   baseResumeText: string | null;
 };
 
+type ScorecardProfileContext = ProfileContext & {
+  nonNegotiables: string[];
+  applicationPreferences: string | null;
+  linkedinUrl: string | null;
+};
+
 type JobContext = {
   title: string;
   companyName: string;
@@ -72,6 +78,22 @@ export function coverLetterMessages(
     {
       role: "user",
       content: `Tone: ${tone}\nCreate the cover letter from:\n${contextJson(profile, job)}`,
+    },
+  ];
+}
+
+export function scorecardMessages(
+  profile: ScorecardProfileContext,
+): AiMessage[] {
+  return [
+    {
+      role: "system",
+      content:
+        "You are a career strategist building a candidate scorecard from supplied profile facts only. Return JSON with: competencies (core strengths, max 12), targetRoles (aligned role titles, max 12), nonNegotiables (deal-breakers inferred from preferences and authorization notes, max 12), matchThreshold (0-100 minimum score to pursue roles), confidence (0-100 how complete the profile is), skillGaps (missing or weak areas to address, max 12), and summary (2-4 sentences). Never invent employers, credentials, or skills not supported by the profile.",
+    },
+    {
+      role: "user",
+      content: JSON.stringify(profile, null, 2),
     },
   ];
 }

@@ -4,13 +4,19 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BriefcaseBusiness,
+  CheckCircle2,
   FileText,
+  Inbox,
   LayoutDashboard,
   Menu,
   Settings,
   Send,
+  TrendingUp,
+  Users,
 } from "lucide-react";
-import { UserButton } from "@clerk/nextjs";
+import { UserButton, useUser } from "@clerk/nextjs";
+import { useEffect, useRef } from "react";
+import posthog from "posthog-js";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -27,16 +33,58 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/jobs", label: "Jobs", icon: BriefcaseBusiness },
   { href: "/applications", label: "Applications", icon: Send },
+  {
+    href: "/approvals",
+    label: "Approvals",
+    icon: CheckCircle2,
+    flag: "hitl_workspace" as const,
+  },
+  {
+    href: "/inbox",
+    label: "Inbox",
+    icon: Inbox,
+    flag: "inbox" as const,
+  },
+  {
+    href: "/tribes",
+    label: "Tribes",
+    icon: Users,
+    flag: "tribes" as const,
+  },
+  {
+    href: "/career",
+    label: "Career",
+    icon: TrendingUp,
+    flag: "tribes" as const,
+  },
   { href: "/resumes", label: "Resumes", icon: FileText },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
-function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
+type EnabledFlags = {
+  hitl_workspace: boolean;
+  inbox: boolean;
+  tribes: boolean;
+};
+
+function NavLinks({
+  onNavigate,
+  enabledFlags,
+}: {
+  onNavigate?: () => void;
+  enabledFlags: EnabledFlags;
+}) {
   const pathname = usePathname();
 
   return (
     <nav className="flex flex-col gap-1">
-      {navItems.map(({ href, label, icon: Icon }) => {
+      {navItems.map((item) => {
+        const { href, label, icon: Icon } = item;
+        const flag = "flag" in item ? item.flag : null;
+        if (flag && !enabledFlags[flag]) {
+          return null;
+        }
+
         const active =
           pathname === href || pathname.startsWith(`${href}/`);
 
@@ -61,36 +109,71 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-export function AppSidebar() {
+function PostHogIdentity() {
+  const { isLoaded, isSignedIn, user } = useUser();
+  const previousUserId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!isLoaded) {
+      return;
+    }
+
+    if (!isSignedIn || !user) {
+      if (previousUserId.current) {
+        posthog.reset();
+        previousUserId.current = null;
+      }
+      return;
+    }
+
+    if (previousUserId.current && previousUserId.current !== user.id) {
+      posthog.reset();
+    }
+
+    posthog.identify(user.id, {
+      email: user.primaryEmailAddress?.emailAddress,
+      first_name: user.firstName,
+      last_name: user.lastName,
+    });
+    previousUserId.current = user.id;
+  }, [isLoaded, isSignedIn, user]);
+
+  return null;
+}
+
+export function AppSidebar({ enabledFlags }: { enabledFlags: EnabledFlags }) {
   return (
-    <aside className="hidden w-60 shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
-      <div className="flex h-14 items-center px-4">
-        <Link href="/dashboard" className="text-base font-semibold tracking-tight">
-          ApplyOS
-        </Link>
-      </div>
-      <Separator />
-      <div className="flex flex-1 flex-col gap-4 p-3">
-        <NavLinks />
-      </div>
-      <div className="border-t border-sidebar-border p-3">
-        <div className="flex items-center gap-2 px-1">
-          <UserButton />
-          <span className="text-xs text-muted-foreground">Account</span>
+    <>
+      <PostHogIdentity />
+      <aside className="hidden w-60 shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
+        <div className="flex h-14 items-center px-4">
+          <Link href="/dashboard" className="text-base font-semibold tracking-tight">
+            ApplyOS
+          </Link>
         </div>
-      </div>
-    </aside>
+        <Separator />
+        <div className="flex flex-1 flex-col gap-4 p-3">
+          <NavLinks enabledFlags={enabledFlags} />
+        </div>
+        <div className="border-t border-sidebar-border p-3">
+          <div className="flex items-center gap-2 px-1">
+            <UserButton userProfileMode="modal" />
+            <span className="text-xs text-muted-foreground">Account</span>
+          </div>
+        </div>
+      </aside>
+    </>
   );
 }
 
-export function AppMobileNav() {
+export function AppMobileNav({ enabledFlags }: { enabledFlags: EnabledFlags }) {
   return (
     <header className="flex h-14 items-center justify-between border-b px-4 md:hidden">
       <Link href="/dashboard" className="font-semibold tracking-tight">
         ApplyOS
       </Link>
       <div className="flex items-center gap-2">
-        <UserButton />
+        <UserButton userProfileMode="modal" />
         <Sheet>
           <SheetTrigger
             render={<Button variant="outline" size="icon-sm" />}
@@ -103,7 +186,7 @@ export function AppMobileNav() {
               <SheetTitle>ApplyOS</SheetTitle>
             </SheetHeader>
             <div className="p-3">
-              <NavLinks />
+              <NavLinks enabledFlags={enabledFlags} />
             </div>
           </SheetContent>
         </Sheet>
