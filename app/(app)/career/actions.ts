@@ -1,9 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { z } from "zod";
 
 import { requireAppUser } from "@/lib/auth";
+import {
+  capturePostHogEvent,
+  getPostHogSessionId,
+} from "@/lib/posthog-server";
 import {
   createAchievement,
   createCompensationEntry,
@@ -45,6 +50,11 @@ export async function generate306090PlanAction(): Promise<
   try {
     const appUser = await requireAppUser();
     const milestone = await generate306090Plan(appUser.id);
+    await capturePostHogEvent({
+      distinctId: appUser.clerkUserId,
+      event: "career_plan_generated",
+      sessionId: getPostHogSessionId(await headers()),
+    });
     revalidatePath("/career");
     return { success: true, data: { milestoneId: milestone.id } };
   } catch (error) {
@@ -59,6 +69,11 @@ export async function createAchievementAction(
     const values = achievementSchema.parse(input);
     const appUser = await requireAppUser();
     const achievement = await createAchievement(appUser.id, values);
+    await capturePostHogEvent({
+      distinctId: appUser.clerkUserId,
+      event: "achievement_created",
+      sessionId: getPostHogSessionId(await headers()),
+    });
     revalidatePath("/career");
     return { success: true, data: { achievementId: achievement.id } };
   } catch (error) {
@@ -73,6 +88,12 @@ export async function createCompensationAction(
     const values = compensationSchema.parse(input);
     const appUser = await requireAppUser();
     const entry = await createCompensationEntry(appUser.id, values);
+    await capturePostHogEvent({
+      distinctId: appUser.clerkUserId,
+      event: "compensation_entry_created",
+      properties: { currency: values.currency ?? "USD" },
+      sessionId: getPostHogSessionId(await headers()),
+    });
     revalidatePath("/career");
     return { success: true, data: { entryId: entry.id } };
   } catch (error) {

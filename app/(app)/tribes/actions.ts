@@ -1,9 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { z } from "zod";
 
 import { requireAppUser } from "@/lib/auth";
+import {
+  capturePostHogEvent,
+  getPostHogSessionId,
+} from "@/lib/posthog-server";
 import { createTribePost } from "@/lib/services/tribes";
 
 export type ActionResult<T = undefined> = {
@@ -41,6 +46,11 @@ export async function createTribePostAction(
       values.title,
       values.body,
     );
+    await capturePostHogEvent({
+      distinctId: appUser.clerkUserId,
+      event: "tribe_post_created",
+      sessionId: getPostHogSessionId(await headers()),
+    });
     revalidatePath("/tribes");
     revalidatePath(`/tribes/${values.tribeSlug}`);
     return { success: true, data: { postId: post.id } };
