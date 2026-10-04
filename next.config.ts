@@ -8,6 +8,9 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: projectRoot,
   },
+  // Next.js blocks dev assets from non-localhost hosts. Clerk production
+  // keys only accept the applyos.me origin.
+  allowedDevOrigins: ["applyos.me", "dev.applyos.me", "127.0.0.1", "localhost"],
 };
 
 export default nextConfig;
